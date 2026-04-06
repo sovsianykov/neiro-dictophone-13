@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Диктофон (PWA)
 
-## Getting Started
+Офлайн-first приложение на **Next.js** (App Router): распознавание речи в браузере, **IndexedDB**, синхронизация с **PostgreSQL** через **Prisma**, вход через **NextAuth** (Credentials + JWT).
 
-First, run the development server:
+> В шаблоне используется **Next.js 16** и **React 19**. Для **next-pwa** сборка выполняется с **webpack** (`npm run build` уже вызывает `next build --webpack`). **Prisma** зафиксирована на **5.22** (классическая схема с `DATABASE_URL` в `schema.prisma`; Prisma 7 требует отдельный конфиг и адаптеры).
+
+## Требования
+
+- Node.js 20+
+- PostgreSQL
+
+## Переменные окружения
+
+Скопируйте `.env.example` в `.env` и заполните:
+
+| Переменная      | Назначение                                      |
+|-----------------|-------------------------------------------------|
+| `DATABASE_URL`  | Строка подключения PostgreSQL для Prisma        |
+| `AUTH_SECRET`   | Секрет подписи сессии (`openssl rand -base64 32`) |
+| `NEXTAUTH_URL`  | Публичный URL приложения, локально: `http://localhost:3000` |
+
+## Установка и база данных
+
+```bash
+npm install
+```
+
+Применить схему к БД (выберите один вариант):
+
+```bash
+# миграции (рекомендуется для продакшена)
+npm run db:migrate
+
+# или быстрый push без файлов миграций (удобно для разработки)
+npm run db:push
+```
+
+Клиент Prisma генерируется на `postinstall` и вручную:
+
+```bash
+npm run db:generate
+```
+
+## Запуск в разработке
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Откройте [http://localhost:3000](http://localhost:3000) — произойдёт редирект на `/login`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Аккаунты:** регистрация на [`/register`](/register), вход на [`/login`](/login). Пользователи хранятся в PostgreSQL (модель `User`, пароль — bcrypt).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+После изменения схемы обязательно выполните миграцию или `db:push` (см. выше).
 
-## Learn More
+## Сборка и PWA
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build
+npm start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Service Worker **next-pwa** отключён в `development` и подключается в production (см. `components/providers.tsx`). После `build` в `public/` появятся `sw.js` и файлы Workbox — они перечислены в `.gitignore`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Иконки `public/icon-192.png` и `icon-512.png` сейчас — минимальные заглушки; для продакшена замените на нормальные маскируемые иконки.
 
-## Deploy on Vercel
+## Структура
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `app/` — маршруты, API (`/api/auth`, `/api/transcriptions`), страницы
+- `components/` — UI, провайдеры
+- `hooks/useSpeechRecognition.ts` — Web Speech API, debounce промежуточного текста
+- `lib/transcriptions-idb.ts` — IndexedDB (idb)
+- `lib/sync-transcriptions.ts` — синхронизация на сервер
+- `db/schema.prisma`, `db/client.ts` — Prisma
+- `auth.ts` — NextAuth (Credentials, JWT)
+- `middleware.ts` — защита страниц и 401 для API без сессии
+- `public/manifest.json` — манифест PWA
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Поведение
+
+1. Текст диктуется через **Web Speech API** (лучше всего Chrome / Edge); языки **ru-RU** и **uk-UA**.
+2. **Сохранить** записывает фразу в **IndexedDB** с полями `text`, `createdAt`, `synced`.
+3. При **онлайн** после сохранения и по событию `online` вызывается `syncTranscriptions()`: `POST /api/transcriptions` (только с сессией), затем локальная запись помечается `synced: true`.
+
+## Лицензия
+
+Как у исходного шаблона Next.js / вашего проекта.

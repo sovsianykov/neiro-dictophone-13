@@ -1,0 +1,36 @@
+{
+  "name": "Нейро-диктофон",
+  "short_name": "Диктофон",
+  "description": "Офлайн диктофон: распознавание речи, локальное хранение и синхронизация.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "browser"],
+  "orientation": "portrait-primary",
+  "background_color": "#fff7ed",
+  "theme_color": "#fb923c",
+  "lang": "ru",
+  "dir": "ltr",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/pwa/icon-192",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icon-512",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/icon-512",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
