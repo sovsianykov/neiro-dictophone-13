@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatTranscript } from "@/lib/format-transcript";
 
 export type SpeechLang = "ru-RU" | "uk-UA";
 
@@ -155,7 +156,7 @@ export function useSpeechRecognition(lang: SpeechLang) {
     setDebouncedInterim("");
   }, []);
 
-  const liveText = `${finalTranscript} ${debouncedInterim}`.trim();
+  const liveText = formatTranscript(`${finalTranscript} ${debouncedInterim}`.trim());
 
   return {
     supported,
