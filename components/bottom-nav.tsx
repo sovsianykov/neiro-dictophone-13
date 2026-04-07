@@ -53,7 +53,8 @@ export function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 inset-x-0 z-50 border-t border-orange-200/80 bg-white/90 backdrop-blur-md"
+      className="fixed bottom-0 inset-x-0 z-50 border-t border-indigo-900/60 bg-[rgba(4,4,20,0.92)] backdrop-blur-md"
+      style={{ boxShadow: "0 -4px 30px -10px rgba(99,102,241,0.3)" }}
       aria-label="Основная навигация"
     >
       <ul className="mx-auto flex max-w-lg" role="list">
@@ -63,10 +64,10 @@ export function BottomNav() {
             <li key={href} className="flex-1">
               <Link
                 href={href}
-                className={`flex flex-col items-center gap-1 py-3 px-4 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-inset ${
+                className={`flex flex-col items-center gap-1 py-3 px-4 text-xs font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset ${
                   isActive
-                    ? "text-orange-600"
-                    : "text-stone-500 hover:text-orange-500"
+                    ? "text-indigo-400 drop-shadow-[0_0_8px_rgba(99,102,241,0.8)]"
+                    : "text-slate-500 hover:text-indigo-400"
                 }`}
                 aria-current={isActive ? "page" : undefined}
               >

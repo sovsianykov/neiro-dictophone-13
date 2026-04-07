@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useSound } from "@/hooks/useSound";
 
-const inputClassName =
-  "rounded-xl border border-orange-200 bg-white/95 px-3 py-2.5 text-base text-stone-800 shadow-sm outline-none ring-orange-200/60 focus:ring-2";
+const inputClassName = "cosmic-input w-full";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -14,6 +14,7 @@ export function RegisterForm() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
+  const { keyStroke } = useSound();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,42 +48,45 @@ export function RegisterForm() {
       className="neo-panel mx-auto flex w-full max-w-sm flex-col gap-4 rounded-2xl p-8"
     >
       <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-orange-600/90">Onboard</p>
-        <h1 className="mt-1 bg-gradient-to-r from-orange-600 to-rose-500 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
+        <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-indigo-400/80">Onboard</p>
+        <h1 className="mt-1 bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-xl font-semibold tracking-tight text-transparent">
           Регистрация
         </h1>
-        <p className="mt-1 text-sm text-stone-600">Пароль — не меньше 8 символов.</p>
+        <p className="mt-1 text-sm text-slate-400">Пароль — не меньше 8 символов.</p>
       </div>
-      <label className="flex flex-col gap-1.5 text-sm font-medium text-stone-700">
+      <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-300">
         Email
         <input
           type="email"
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={keyStroke}
           className={inputClassName}
           required
         />
       </label>
-      <label className="flex flex-col gap-1.5 text-sm font-medium text-stone-700">
+      <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-300">
         Пароль
         <input
           type="password"
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={keyStroke}
           className={inputClassName}
           required
           minLength={8}
         />
       </label>
-      <label className="flex flex-col gap-1.5 text-sm font-medium text-stone-700">
+      <label className="flex flex-col gap-1.5 text-sm font-medium text-slate-300">
         Повтор пароля
         <input
           type="password"
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
+          onKeyDown={keyStroke}
           className={inputClassName}
           required
           minLength={8}
@@ -91,13 +95,13 @@ export function RegisterForm() {
       <button
         type="submit"
         disabled={loading}
-        className="neo-btn-primary mt-2 rounded-xl py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
+        className="neo-btn-primary relative overflow-hidden mt-2 rounded-xl py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? "Регистрация…" : "Создать аккаунт"}
       </button>
-      <p className="text-center text-sm text-stone-600">
+      <p className="text-center text-sm text-slate-400">
         Уже есть аккаунт?{" "}
-        <Link href="/login" className="font-medium text-orange-600 underline-offset-2 hover:text-rose-600 hover:underline">
+        <Link href="/login" className="font-medium text-indigo-400 underline-offset-2 hover:text-purple-400 hover:underline">
           Войти
         </Link>
       </p>

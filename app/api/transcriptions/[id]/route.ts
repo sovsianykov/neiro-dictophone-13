@@ -44,6 +44,7 @@ export async function PATCH(
   }
 
   const b = body as Record<string, unknown>;
+  const appendMode = b.append === true;
   const data: { text?: string; chapter?: number } = {};
 
   if (typeof b.text === "string") data.text = b.text.trim();
@@ -60,6 +61,11 @@ export async function PATCH(
     where: { id, userId: session.user.id },
   });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Append mode: prepend existing text with a space
+  if (appendMode && typeof data.text === "string" && data.text) {
+    data.text = `${existing.text} ${data.text}`.trim();
+  }
 
   const updated = await prisma.transcription.update({
     where: { id },

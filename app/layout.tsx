@@ -1,12 +1,15 @@
 import { Providers } from "@/components/providers";
+import { Starfield } from "@/components/starfield";
+import { IntroScreen } from "@/components/intro-screen";
 import { getSiteUrl } from "@/lib/site";
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin", "cyrillic"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -17,7 +20,7 @@ const geistMono = Geist_Mono({
 const site = getSiteUrl();
 const title = "Нейро-диктофон — офлайн PWA с распознаванием речи";
 const description =
-  "Диктофон в браузере: Web Speech API, офлайн-хранилище IndexedDB, синхронизация расшифровок с PostgreSQL. Вход по email, PWA и светлый дружелюбный интерфейс.";
+  "Диктофон в браузере: Web Speech API, офлайн-хранилище IndexedDB, синхронизация расшифровок с PostgreSQL. Вход по email, PWA и тёмный бизнес-интерфейс.";
 
 export const metadata: Metadata = {
   metadataBase: site,
@@ -29,16 +32,7 @@ export const metadata: Metadata = {
   applicationName: "Нейро-диктофон",
   authors: [{ name: "Dictophone" }],
   generator: "Next.js",
-  keywords: [
-    "диктофон",
-    "распознавание речи",
-    "speech to text",
-    "PWA",
-    "IndexedDB",
-    "офлайн",
-    "Next.js",
-    "синхронизация",
-  ],
+  keywords: ["диктофон", "распознавание речи", "speech to text", "PWA", "IndexedDB", "офлайн"],
   referrer: "origin-when-cross-origin",
   manifest: "/manifest.json",
   icons: {
@@ -57,15 +51,11 @@ export const metadata: Metadata = {
     title,
     description,
   },
-  twitter: {
-    card: "summary_large_image",
-    title,
-    description,
-  },
+  twitter: { card: "summary_large_image", title, description },
   robots: { index: true, follow: true },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "Диктофон",
   },
   formatDetection: { telephone: false },
@@ -74,10 +64,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fff7ed" },
-    { media: "(prefers-color-scheme: dark)", color: "#ea580c" },
+    { media: "(prefers-color-scheme: light)", color: "#0a0e1a" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0e1a" },
   ],
-  colorScheme: "light",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
@@ -86,8 +76,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="ru" className={`${manrope.variable} ${geistMono.variable} h-full antialiased dark`}>
       <body className="neo-bg neo-grid min-h-full flex flex-col text-foreground">
+        <Starfield />
+        <IntroScreen />
         <Providers>{children}</Providers>
       </body>
     </html>

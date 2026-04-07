@@ -1,6 +1,8 @@
 "use client";
 
 import { useSpeechRecognition, type SpeechLang } from "@/hooks/useSpeechRecognition";
+import { useLastBook } from "@/hooks/useLastBook";
+import { useSound } from "@/hooks/useSound";
 import { signOut, useSession } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -10,9 +12,22 @@ import { buildFilename } from "@/lib/filename";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type Step =
-  | "setup"    // fill book + chapter before recording
+  | "setup"     // fill book + chapter before recording
   | "recording" // mic is active
-  | "review";  // recording stopped — inline editing before save
+  | "review";   // recording stopped — inline editing before save
+
+// ─── Ripple helper ────────────────────────────────────────────────────────────
+
+function addRipple(e: React.MouseEvent<HTMLButtonElement>) {
+  const btn = e.currentTarget;
+  const circle = document.createElement("span");
+  const rect = btn.getBoundingClientRect();
+  circle.className = "ripple";
+  circle.style.left = `${e.clientX - rect.left}px`;
+  circle.style.top = `${e.clientY - rect.top}px`;
+  btn.appendChild(circle);
+  circle.addEventListener("animationend", () => circle.remove());
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -37,8 +52,14 @@ export function DictophoneApp() {
 
   // Pre-recording setup
   const [step, setStep] = useState<Step>("setup");
+  const { lastBook, saveBook } = useLastBook();
   const [bookTitle, setBookTitle] = useState("");
   const [chapterInput, setChapterInput] = useState("");
+
+  useEffect(() => {
+    if (lastBook && !bookTitle) setBookTitle(lastBook);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastBook]);
   const [setupError, setSetupError] = useState("");
 
   // Review / inline editing
@@ -48,6 +69,28 @@ export function DictophoneApp() {
   // track liveText when recording stops
   const liveTextRef = useRef(liveText);
   useEffect(() => { liveTextRef.current = liveText; }, [liveText]);
+
+  // ── Sound ──────────────────────────────────────────────────────────────────
+  const { enabled: soundEnabled, toggle: toggleSound, click: playClick, keyStroke, startAmbientSound, stopAmbientSound } = useSound();
+
+  // Start ambient on first user interaction
+  const ambientStarted = useRef(false);
+  const handleFirstInteraction = useCallback(() => {
+    if (!ambientStarted.current) {
+      ambientStarted.current = true;
+      startAmbientSound();
+    }
+  }, [startAmbientSound]);
+
+  // Mute ambient while recording
+  useEffect(() => {
+    if (step === "recording") {
+      stopAmbientSound();
+    } else if (ambientStarted.current && soundEnabled) {
+      startAmbientSound();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   // ── Online tracking ────────────────────────────────────────────────────────
 
@@ -104,7 +147,10 @@ export function DictophoneApp() {
 
   // ── Setup validation ───────────────────────────────────────────────────────
 
-  const handleStartRecording = async () => {
+  const handleStartRecording = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    handleFirstInteraction();
+    playClick();
+    addRipple(e);
     const title = bookTitle.trim();
     if (!title) {
       setSetupError("Введите название книги");
@@ -118,13 +164,16 @@ export function DictophoneApp() {
     setSetupError("");
     setError(null);
     resetTranscript();
+    saveBook(title);
     setStep("recording");
     await start();
   };
 
   // ── Stop recording → go to review ─────────────────────────────────────────
 
-  const handleStop = () => {
+  const handleStop = (e: React.MouseEvent<HTMLButtonElement>) => {
+    playClick();
+    addRipple(e);
     stop();
     setEditedText(liveTextRef.current.trim());
     setStep("review");
@@ -132,7 +181,9 @@ export function DictophoneApp() {
 
   // ── Save after inline editing ──────────────────────────────────────────────
 
-  const handleSave = async () => {
+  const handleSave = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    playClick();
+    addRipple(e);
     const text = editedText.trim();
     if (!text) {
       toast.message("Нет текста", { description: "Введите или продиктуйте текст." });
@@ -177,7 +228,9 @@ export function DictophoneApp() {
     }
   };
 
-  const handleCancel = () => {
+  const handleCancel = (e: React.MouseEvent<HTMLButtonElement>) => {
+    playClick();
+    addRipple(e);
     setEditedText("");
     resetTranscript();
     setStep("setup");
@@ -185,7 +238,9 @@ export function DictophoneApp() {
 
   // ── Download .txt ──────────────────────────────────────────────────────────
 
-  const handleDownload = () => {
+  const handleDownload = (e: React.MouseEvent<HTMLButtonElement>) => {
+    playClick();
+    addRipple(e);
     const text = (step === "review" ? editedText : liveText).trim();
     if (!text) {
       toast.message("Нечего сохранять", { description: "Текст пустой." });
@@ -207,8 +262,8 @@ export function DictophoneApp() {
   // ── Badges ─────────────────────────────────────────────────────────────────
 
   const badgeOnline = online
-    ? "border-emerald-300 bg-emerald-50 text-emerald-800 shadow-sm"
-    : "border-amber-300 bg-amber-50 text-amber-900 shadow-sm";
+    ? "border-emerald-700/60 bg-emerald-950/60 text-emerald-400"
+    : "border-amber-700/60 bg-amber-950/60 text-amber-400";
 
   const chapterNum = chapterInput.trim() ? Number(chapterInput.trim()) : null;
   const previewFilename =
@@ -223,34 +278,42 @@ export function DictophoneApp() {
       {/* Header */}
       <header className="neo-panel flex flex-col gap-5 rounded-2xl p-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
-          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-orange-600/90">Dictophone // v1</p>
-          <h1 className="bg-gradient-to-r from-orange-500 via-rose-500 to-amber-400 bg-clip-text text-2xl font-semibold tracking-tight text-transparent">
+          <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-indigo-400/80">Dictophone // v1</p>
+          <h1 className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-2xl font-semibold tracking-tight text-transparent">
             Нейро-диктофон
           </h1>
-          <p className="text-sm text-stone-600">
+          <p className="text-sm text-slate-400">
             Офлайн · синхронизация ·{" "}
-            <span className="font-mono text-orange-700">{session?.user?.email}</span>
+            <span className="font-mono text-indigo-300">{session?.user?.email}</span>
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <span className={`inline-flex items-center rounded-lg border px-3 py-1 text-xs font-medium ${badgeOnline}`}>
             <span
-              className={`mr-2 h-1.5 w-1.5 rounded-full ${online ? "bg-emerald-500 shadow-[0_0_6px_#34d399]" : "bg-amber-500"}`}
+              className={`mr-2 h-1.5 w-1.5 rounded-full ${online ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-amber-400"}`}
             />
             {online ? "Онлайн" : "Офлайн"}
           </span>
           <button
             type="button"
-            onClick={() => void runSync()}
+            onClick={(e) => { handleFirstInteraction(); playClick(); addRipple(e); void runSync(); }}
             disabled={syncing || !online}
-            className="neo-btn-ghost rounded-xl px-4 py-2.5 text-sm font-medium transition hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-40"
+            className="neo-btn-ghost relative overflow-hidden rounded-xl px-4 py-2.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40"
           >
             {syncing ? "Синхронизация…" : "Синхронизировать"}
           </button>
           <button
             type="button"
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            className="rounded-xl border border-orange-200 bg-white/90 px-4 py-2.5 text-sm font-medium text-stone-800 shadow-sm transition hover:border-orange-300 hover:bg-white"
+            onClick={() => { handleFirstInteraction(); toggleSound(); }}
+            className={`sound-btn ${soundEnabled ? "sound-on" : ""}`}
+            title={soundEnabled ? "Выключить звук" : "Включить звук"}
+          >
+            {soundEnabled ? "🔊" : "🔇"} {soundEnabled ? "ON" : "OFF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { playClick(); void signOut({ callbackUrl: "/login" }); }}
+            className="neo-btn-ghost relative overflow-hidden rounded-xl px-4 py-2.5 text-sm font-medium"
           >
             Выйти
           </button>
@@ -258,16 +321,16 @@ export function DictophoneApp() {
       </header>
 
       {/* Main section */}
-      <section className="neo-panel rounded-2xl p-6 flex flex-col gap-5">
+      <section className={`neo-panel rounded-2xl p-6 flex flex-col gap-5 ${step === "recording" ? "recording-active" : ""}`}>
 
         {/* Language selector (always visible except during recording) */}
         {step !== "recording" && (
-          <label className="flex items-center gap-3 text-sm font-medium text-stone-700">
-            <span className="font-mono text-xs uppercase tracking-wider text-orange-600">Язык</span>
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-300">
+            <span className="font-mono text-xs uppercase tracking-wider text-indigo-400">Язык</span>
             <select
               value={lang}
-              onChange={(e) => setLang(e.target.value as SpeechLang)}
-              className="rounded-xl border border-orange-200 bg-white/95 px-3 py-2 text-sm text-stone-800 shadow-sm outline-none ring-orange-300/40 focus:ring-2"
+              onChange={(e) => { playClick(); setLang(e.target.value as SpeechLang); }}
+              className="cosmic-input"
             >
               <option value="ru-RU">Русский (ru-RU)</option>
               <option value="uk-UA">Українська (uk-UA)</option>
@@ -276,7 +339,7 @@ export function DictophoneApp() {
         )}
 
         {supported === false && (
-          <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <p className="rounded-xl border border-amber-700/50 bg-amber-950/60 p-3 text-sm text-amber-300">
             Web Speech API недоступен. Используйте Chrome или Edge.
           </p>
         )}
@@ -285,7 +348,7 @@ export function DictophoneApp() {
         {step === "setup" && (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="bookTitle" className="font-mono text-xs uppercase tracking-wider text-orange-600">
+              <label htmlFor="bookTitle" className="font-mono text-xs uppercase tracking-wider text-indigo-400">
                 Книга
               </label>
               <input
@@ -293,14 +356,18 @@ export function DictophoneApp() {
                 type="text"
                 placeholder="Название книги"
                 value={bookTitle}
-                onChange={(e) => setBookTitle(e.target.value)}
-                className="rounded-xl border border-orange-200 bg-white/95 px-3 py-2.5 text-sm text-stone-800 shadow-sm outline-none ring-orange-300/40 focus:ring-2"
+                onChange={(e) => {
+                  setBookTitle(e.target.value);
+                  if (e.target.value.trim()) saveBook(e.target.value.trim());
+                }}
+                onKeyDown={keyStroke}
+                className="cosmic-input w-full"
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="chapter" className="font-mono text-xs uppercase tracking-wider text-orange-600">
-                Глава <span className="normal-case text-stone-400">(оставьте пустым для авто)</span>
+              <label htmlFor="chapter" className="font-mono text-xs uppercase tracking-wider text-indigo-400">
+                Глава <span className="normal-case text-slate-500">(оставьте пустым для авто)</span>
               </label>
               <input
                 id="chapter"
@@ -309,26 +376,27 @@ export function DictophoneApp() {
                 placeholder="Авто"
                 value={chapterInput}
                 onChange={(e) => setChapterInput(e.target.value)}
-                className="w-32 rounded-xl border border-orange-200 bg-white/95 px-3 py-2.5 text-sm text-stone-800 shadow-sm outline-none ring-orange-300/40 focus:ring-2"
+                onKeyDown={keyStroke}
+                className="cosmic-input w-32"
               />
             </div>
 
             {previewFilename && (
-              <p className="font-mono text-xs text-stone-500">
-                Файл: <span className="text-orange-700">{previewFilename}</span>
+              <p className="font-mono text-xs text-slate-500">
+                Файл: <span className="text-indigo-400">{previewFilename}</span>
               </p>
             )}
 
             {setupError && (
-              <p className="text-xs text-rose-600">{setupError}</p>
+              <p className="text-xs text-rose-400">{setupError}</p>
             )}
 
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => void handleStartRecording()}
+                onClick={(e) => void handleStartRecording(e)}
                 disabled={supported === false}
-                className="neo-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45"
+                className="neo-btn-primary relative overflow-hidden rounded-xl px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
               >
                 Начать запись
               </button>
@@ -339,21 +407,26 @@ export function DictophoneApp() {
         {/* ── STEP: RECORDING ── */}
         {step === "recording" && (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
-              <span className="animate-pulse text-rose-500 text-lg">●</span>
+            <div className="flex items-center gap-4">
+              {/* Waveform */}
+              <div className="flex items-end gap-[3px] h-8">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <span key={i} className="waveform-bar" style={{ animationDuration: `${0.5 + i * 0.07}s` }} />
+                ))}
+              </div>
               <div>
-                <p className="font-semibold text-stone-800">{bookTitle}</p>
-                <p className="text-xs text-stone-500">
+                <p className="font-semibold text-slate-100">{bookTitle}</p>
+                <p className="text-xs text-slate-400">
                   Глава {chapterInput.trim() ? chapterInput : "(авто)"}
                 </p>
               </div>
             </div>
 
-            <div className="neo-transcript min-h-[140px] rounded-2xl p-5 font-mono text-sm leading-relaxed text-stone-800 md:text-base">
+            <div className="neo-transcript min-h-[140px] rounded-2xl p-5 font-mono text-sm leading-relaxed text-slate-200 md:text-base">
               {liveText ? (
                 <p className="whitespace-pre-wrap">{liveText}</p>
               ) : (
-                <p className="text-stone-400">Слушаю…</p>
+                <p className="text-slate-500">Слушаю…</p>
               )}
             </div>
 
@@ -361,7 +434,7 @@ export function DictophoneApp() {
               <button
                 type="button"
                 onClick={handleStop}
-                className="neo-btn-ghost rounded-xl px-5 py-2.5 text-sm font-semibold transition hover:bg-white/90"
+                className="neo-btn-ghost relative overflow-hidden rounded-xl px-5 py-2.5 text-sm font-semibold"
               >
                 Остановить
               </button>
@@ -374,10 +447,10 @@ export function DictophoneApp() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-semibold text-stone-800">{bookTitle}</p>
-                <p className="text-xs text-stone-500">
+                <p className="font-semibold text-slate-100">{bookTitle}</p>
+                <p className="text-xs text-slate-400">
                   Глава {chapterInput.trim() ? chapterInput : "(авто)"} ·{" "}
-                  <span className="font-mono text-orange-700">
+                  <span className="font-mono text-indigo-400">
                     {buildFilename(bookTitle.trim() || "Untitled", chapterNum ?? 1)}
                   </span>
                 </p>
@@ -385,7 +458,7 @@ export function DictophoneApp() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="editText" className="font-mono text-xs uppercase tracking-wider text-orange-600">
+              <label htmlFor="editText" className="font-mono text-xs uppercase tracking-wider text-indigo-400">
                 Редактировать расшифровку
               </label>
               <textarea
@@ -393,16 +466,18 @@ export function DictophoneApp() {
                 rows={10}
                 value={editedText}
                 onChange={(e) => setEditedText(e.target.value)}
-                className="rounded-2xl border border-orange-200 bg-white/95 px-4 py-3 font-mono text-sm leading-relaxed text-stone-800 shadow-sm outline-none ring-orange-300/40 focus:ring-2 resize-y"
+                onKeyDown={keyStroke}
+                className="cosmic-input w-full rounded-2xl font-mono leading-relaxed resize-y"
+                style={{ minHeight: "160px" }}
               />
             </div>
 
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => void handleSave()}
+                onClick={(e) => void handleSave(e)}
                 disabled={saving || !editedText.trim()}
-                className="neo-btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-45"
+                className="neo-btn-primary relative overflow-hidden rounded-xl px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {saving ? "Сохранение…" : "Сохранить"}
               </button>
@@ -410,14 +485,14 @@ export function DictophoneApp() {
                 type="button"
                 onClick={handleDownload}
                 disabled={!editedText.trim()}
-                className="neo-btn-ghost rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
+                className="neo-btn-ghost relative overflow-hidden rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Скачать .txt
               </button>
               <button
                 type="button"
                 onClick={handleCancel}
-                className="rounded-xl border border-stone-300 bg-white/80 px-4 py-2.5 text-sm font-semibold text-stone-700 transition hover:border-orange-300 hover:bg-white"
+                className="neo-btn-ghost relative overflow-hidden rounded-xl px-4 py-2.5 text-sm font-semibold"
               >
                 Отмена
               </button>

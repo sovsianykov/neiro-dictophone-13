@@ -22,6 +22,8 @@ export function useSpeechRecognition(lang: SpeechLang) {
   const shouldListenRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const langRef = useRef(lang);
+  // Track last appended final chunk to prevent duplicates on mobile
+  const lastFinalRef = useRef("");
 
   useEffect(() => {
     langRef.current = lang;
@@ -63,7 +65,12 @@ export function useSpeechRecognition(lang: SpeechLang) {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Request audio-only, no video — prevents any playback attachment
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+        video: false,
+      } as MediaStreamConstraints);
+      // Immediately stop the test stream; recognition API manages its own
       stream.getTracks().forEach((t) => t.stop());
     } catch {
       setError("Доступ к микрофону запрещён или устройство недоступно.");
@@ -87,7 +94,12 @@ export function useSpeechRecognition(lang: SpeechLang) {
           else interim += piece;
         }
         if (final) {
-          setFinalTranscript((prev) => `${prev} ${final}`.trim());
+          const trimmed = final.trim();
+          // Deduplicate: skip if this chunk is the same as the last appended one
+          if (trimmed && trimmed !== lastFinalRef.current) {
+            lastFinalRef.current = trimmed;
+            setFinalTranscript((prev) => `${prev} ${trimmed}`.trim());
+          }
         }
         setInterimTranscript(interim);
       };
@@ -154,6 +166,7 @@ export function useSpeechRecognition(lang: SpeechLang) {
     setFinalTranscript("");
     setInterimTranscript("");
     setDebouncedInterim("");
+    lastFinalRef.current = "";
   }, []);
 
   const liveText = formatTranscript(`${finalTranscript} ${debouncedInterim}`.trim());
