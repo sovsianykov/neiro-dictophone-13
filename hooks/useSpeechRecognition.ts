@@ -11,7 +11,6 @@ function getRecognitionCtor(): (new () => SpeechRecognition) | null {
 }
 
 export function useSpeechRecognition(lang: SpeechLang) {
-  const [supported, setSupported] = useState<boolean | null>(null);
   const [listening, setListening] = useState(false);
   const [finalTranscript, setFinalTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -19,41 +18,47 @@ export function useSpeechRecognition(lang: SpeechLang) {
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const shouldListenRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const langRef = useRef(lang);
-  // Track last appended final chunk to prevent duplicates on mobile
-  const lastFinalRef = useRef("");
 
   useEffect(() => {
     langRef.current = lang;
   }, [lang]);
 
+  // debounce interim (чтобы не дергать UI)
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setDebouncedInterim(interimTranscript), 150);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedInterim(interimTranscript);
+    }, 150);
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [interimTranscript]);
 
-  useEffect(() => {
-    setSupported(!!getRecognitionCtor());
-  }, []);
+  const supported = !!getRecognitionCtor();
 
+  // ─────────────────────────────────────────────────────────────
+  // STOP
+  // ─────────────────────────────────────────────────────────────
   const stop = useCallback(() => {
-    shouldListenRef.current = false;
     try {
-      recognitionRef.current?.stop();
+      recognitionRef.current?.abort(); // ✅ важно для mobile
     } catch {
       /* ignore */
     }
+
     recognitionRef.current = null;
     setListening(false);
   }, []);
 
+  // ─────────────────────────────────────────────────────────────
+  // START
+  // ─────────────────────────────────────────────────────────────
   const start = useCallback(async () => {
     const Ctor = getRecognitionCtor();
+
     if (!Ctor) {
       setError("Распознавание речи не поддерживается в этом браузере.");
       return;
@@ -65,12 +70,12 @@ export function useSpeechRecognition(lang: SpeechLang) {
     }
 
     try {
-      // Request audio-only, no video — prevents any playback attachment
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
         video: false,
-      } as MediaStreamConstraints);
-      // Immediately stop the test stream; recognition API manages its own
+      });
+
+      // сразу закрываем тестовый поток
       stream.getTracks().forEach((t) => t.stop());
     } catch {
       setError("Доступ к микрофону запрещён или устройство недоступно.");
@@ -78,84 +83,90 @@ export function useSpeechRecognition(lang: SpeechLang) {
     }
 
     setError(null);
-    shouldListenRef.current = true;
 
-    const bindInstance = (r: SpeechRecognition) => {
-      r.lang = langRef.current;
-      r.continuous = true;
-      r.interimResults = true;
+    try {
+      const recognition = new Ctor();
+      recognitionRef.current = recognition;
 
-      r.onresult = (event: SpeechRecognitionEvent) => {
+      recognition.lang = langRef.current;
+      recognition.continuous = false; // ✅ КРИТИЧНО для PWA
+      recognition.interimResults = true;
+
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
         let interim = "";
         let final = "";
+
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const piece = event.results[i]?.[0]?.transcript ?? "";
-          if (event.results[i].isFinal) final += piece;
-          else interim += piece;
-        }
-        if (final) {
-          const trimmed = final.trim();
-          // Deduplicate: skip if this chunk is the same as the last appended one
-          if (trimmed && trimmed !== lastFinalRef.current) {
-            lastFinalRef.current = trimmed;
-            setFinalTranscript((prev) => `${prev} ${trimmed}`.trim());
+          const result = event.results[i];
+          const text = result?.[0]?.transcript ?? "";
+
+          if (result.isFinal) {
+            final += text;
+          } else {
+            interim += text;
           }
         }
+
+        // ✅ защита от дублей
+        if (final) {
+          const trimmed = final.trim();
+
+          setFinalTranscript((prev) => {
+            if (!trimmed) return prev;
+            if (prev.includes(trimmed)) return prev;
+            return `${prev} ${trimmed}`.trim();
+          });
+        }
+
         setInterimTranscript(interim);
       };
 
-      r.onerror = (event: SpeechRecognitionErrorEvent) => {
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-          setError("Доступ к микрофону запрещён. Разрешите использование микрофона в настройках браузера.");
-          shouldListenRef.current = false;
-          setListening(false);
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        if (
+            event.error === "no-speech" ||
+            event.error === "aborted"
+        ) {
           return;
         }
-        if (event.error === "no-speech" || event.error === "aborted") {
-          return;
+
+        if (
+            event.error === "not-allowed" ||
+            event.error === "service-not-allowed"
+        ) {
+          setError(
+              "Доступ к микрофону запрещён. Разрешите использование микрофона."
+          );
+        } else {
+          setError(`Ошибка распознавания: ${event.error}`);
         }
-        setError(`Ошибка распознавания: ${event.error}`);
+
+        setListening(false);
       };
 
-      r.onend = () => {
-        if (!shouldListenRef.current) {
-          setListening(false);
-          recognitionRef.current = null;
-          return;
-        }
-        try {
-          const next = new Ctor();
-          recognitionRef.current = next;
-          bindInstance(next);
-          next.start();
-          setListening(true);
-        } catch {
-          shouldListenRef.current = false;
-          setListening(false);
-          recognitionRef.current = null;
-        }
+      recognition.onend = () => {
+        // ❌ никаких restart
+        setListening(false);
+        recognitionRef.current = null;
       };
-    };
 
-    try {
-      const r = new Ctor();
-      recognitionRef.current = r;
-      bindInstance(r);
-      r.start();
+      recognition.start();
       setListening(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось запустить распознавание.");
-      shouldListenRef.current = false;
+      setError(
+          e instanceof Error
+              ? e.message
+              : "Не удалось запустить распознавание."
+      );
       setListening(false);
       recognitionRef.current = null;
     }
   }, []);
 
+  // cleanup
   useEffect(() => {
     return () => {
-      shouldListenRef.current = false;
       try {
-        recognitionRef.current?.stop();
+        recognitionRef.current?.abort();
       } catch {
         /* ignore */
       }
@@ -166,10 +177,11 @@ export function useSpeechRecognition(lang: SpeechLang) {
     setFinalTranscript("");
     setInterimTranscript("");
     setDebouncedInterim("");
-    lastFinalRef.current = "";
   }, []);
 
-  const liveText = formatTranscript(`${finalTranscript} ${debouncedInterim}`.trim());
+  const liveText = formatTranscript(
+      `${finalTranscript} ${debouncedInterim}`.trim()
+  );
 
   return {
     supported,
