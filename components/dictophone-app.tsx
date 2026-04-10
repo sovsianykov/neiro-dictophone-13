@@ -70,6 +70,9 @@ export function DictophoneApp() {
   const liveTextRef = useRef(liveText);
   useEffect(() => { liveTextRef.current = liveText; }, [liveText]);
 
+  // text accumulated before resuming (to prepend to new liveText)
+  const resumeBaseRef = useRef("");
+
   // ── Sound ──────────────────────────────────────────────────────────────────
   const { enabled: soundEnabled, toggle: toggleSound, click: playClick, keyStroke, startAmbientSound, stopAmbientSound } = useSound();
 
@@ -175,8 +178,22 @@ export function DictophoneApp() {
     playClick();
     addRipple(e);
     stop();
-    setEditedText(liveTextRef.current.trim());
+    const base = resumeBaseRef.current;
+    const newText = liveTextRef.current.trim();
+    setEditedText(base ? `${base} ${newText}`.trim() : newText);
+    resumeBaseRef.current = "";
     setStep("review");
+  };
+
+  // ── Resume recording (append to editedText) ────────────────────────────────
+
+  const handleResume = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    playClick();
+    addRipple(e);
+    resumeBaseRef.current = editedText.trim();
+    resetTranscript();
+    setStep("recording");
+    await start();
   };
 
   // ── Save after inline editing ──────────────────────────────────────────────
@@ -480,6 +497,14 @@ export function DictophoneApp() {
                 className="neo-btn-primary relative overflow-hidden rounded-xl px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {saving ? "Сохранение…" : "Сохранить"}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => void handleResume(e)}
+                disabled={supported === false}
+                className="neo-btn-ghost relative overflow-hidden rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Продолжить запись
               </button>
               <button
                 type="button"

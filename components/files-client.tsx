@@ -23,6 +23,7 @@ export function FilesClient() {
   const [books, setBooks] = useState<BookWithTranscriptions[]>([]);
   const [loading, setLoading] = useState(true);
   const [openBooks, setOpenBooks] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     (async () => {
@@ -41,6 +42,32 @@ export function FilesClient() {
       }
     })();
   }, []);
+
+  const deleteTranscription = async (transcriptionId: string) => {
+    if (!confirm("Удалить эту расшифровку?")) return;
+    setDeleting((prev) => new Set(prev).add(transcriptionId));
+    try {
+      const res = await fetch(`/api/transcriptions/${transcriptionId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+      setBooks((prev) =>
+        prev
+          .map((book) => ({
+            ...book,
+            transcriptions: book.transcriptions.filter((t) => t.id !== transcriptionId),
+          }))
+          .filter((book) => book.transcriptions.length > 0),
+      );
+      toast.success("Расшифровка удалена");
+    } catch {
+      toast.error("Не удалось удалить");
+    } finally {
+      setDeleting((prev) => {
+        const next = new Set(prev);
+        next.delete(transcriptionId);
+        return next;
+      });
+    }
+  };
 
   const toggleBook = (bookId: string) => {
     setOpenBooks((prev) => {
@@ -153,6 +180,16 @@ export function FilesClient() {
                           >
                             🎙
                           </Link>
+                          <button
+                            type="button"
+                            onClick={() => deleteTranscription(t.id)}
+                            disabled={deleting.has(t.id)}
+                            className="flex shrink-0 items-center px-3 text-red-500/60 transition hover:bg-red-950/40 hover:text-red-400 disabled:opacity-40"
+                            title="Удалить"
+                            aria-label="Удалить расшифровку"
+                          >
+                            🗑
+                          </button>
                         </li>
                       ))}
                     </ul>

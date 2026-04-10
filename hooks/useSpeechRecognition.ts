@@ -11,6 +11,7 @@ function getRecognitionCtor(): (new () => SpeechRecognition) | null {
 }
 
 export function useSpeechRecognition(lang: SpeechLang) {
+  const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [finalTranscript, setFinalTranscript] = useState("");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -20,6 +21,7 @@ export function useSpeechRecognition(lang: SpeechLang) {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const langRef = useRef(lang);
+  const shouldListenRef = useRef(false);
 
   useEffect(() => {
     langRef.current = lang;
@@ -37,12 +39,15 @@ export function useSpeechRecognition(lang: SpeechLang) {
     };
   }, [interimTranscript]);
 
-  const supported = !!getRecognitionCtor();
+  useEffect(() => {
+    setSupported(!!getRecognitionCtor());
+  }, []);
 
   // ─────────────────────────────────────────────────────────────
   // STOP
   // ─────────────────────────────────────────────────────────────
   const stop = useCallback(() => {
+    shouldListenRef.current = false;
     try {
       recognitionRef.current?.abort(); // ✅ важно для mobile
     } catch {
@@ -56,6 +61,85 @@ export function useSpeechRecognition(lang: SpeechLang) {
   // ─────────────────────────────────────────────────────────────
   // START
   // ─────────────────────────────────────────────────────────────
+  const startRecognition = useCallback((Ctor: new () => SpeechRecognition) => {
+    if (!shouldListenRef.current) return;
+
+    try {
+      const recognition = new Ctor();
+      recognitionRef.current = recognition;
+
+      recognition.lang = langRef.current;
+      recognition.continuous = false; // ✅ КРИТИЧНО для PWA
+      recognition.interimResults = true;
+
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        let interim = "";
+        let final = "";
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          const text = result?.[0]?.transcript ?? "";
+
+          if (result.isFinal) {
+            final += text;
+          } else {
+            interim += text;
+          }
+        }
+
+        if (final) {
+          const trimmed = final.trim();
+          setFinalTranscript((prev) => {
+            if (!trimmed) return prev;
+            if (prev.includes(trimmed)) return prev;
+            return `${prev} ${trimmed}`.trim();
+          });
+        }
+
+        setInterimTranscript(interim);
+      };
+
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        if (event.error === "no-speech" || event.error === "aborted") {
+          return;
+        }
+
+        if (
+          event.error === "not-allowed" ||
+          event.error === "service-not-allowed"
+        ) {
+          setError(
+            "Доступ к микрофону запрещён. Разрешите использование микрофона."
+          );
+        } else {
+          setError(`Ошибка распознавания: ${event.error}`);
+        }
+
+        shouldListenRef.current = false;
+        setListening(false);
+      };
+
+      recognition.onend = () => {
+        recognitionRef.current = null;
+        if (shouldListenRef.current) {
+          // auto-restart: browser stopped due to pause, user still wants to record
+          startRecognition(Ctor);
+        } else {
+          setListening(false);
+        }
+      };
+
+      recognition.start();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Не удалось запустить распознавание."
+      );
+      shouldListenRef.current = false;
+      setListening(false);
+      recognitionRef.current = null;
+    }
+  }, []);
+
   const start = useCallback(async () => {
     const Ctor = getRecognitionCtor();
 
@@ -83,88 +167,15 @@ export function useSpeechRecognition(lang: SpeechLang) {
     }
 
     setError(null);
-
-    try {
-      const recognition = new Ctor();
-      recognitionRef.current = recognition;
-
-      recognition.lang = langRef.current;
-      recognition.continuous = false; // ✅ КРИТИЧНО для PWA
-      recognition.interimResults = true;
-
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let interim = "";
-        let final = "";
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          const text = result?.[0]?.transcript ?? "";
-
-          if (result.isFinal) {
-            final += text;
-          } else {
-            interim += text;
-          }
-        }
-
-        // ✅ защита от дублей
-        if (final) {
-          const trimmed = final.trim();
-
-          setFinalTranscript((prev) => {
-            if (!trimmed) return prev;
-            if (prev.includes(trimmed)) return prev;
-            return `${prev} ${trimmed}`.trim();
-          });
-        }
-
-        setInterimTranscript(interim);
-      };
-
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        if (
-            event.error === "no-speech" ||
-            event.error === "aborted"
-        ) {
-          return;
-        }
-
-        if (
-            event.error === "not-allowed" ||
-            event.error === "service-not-allowed"
-        ) {
-          setError(
-              "Доступ к микрофону запрещён. Разрешите использование микрофона."
-          );
-        } else {
-          setError(`Ошибка распознавания: ${event.error}`);
-        }
-
-        setListening(false);
-      };
-
-      recognition.onend = () => {
-        // ❌ никаких restart
-        setListening(false);
-        recognitionRef.current = null;
-      };
-
-      recognition.start();
-      setListening(true);
-    } catch (e) {
-      setError(
-          e instanceof Error
-              ? e.message
-              : "Не удалось запустить распознавание."
-      );
-      setListening(false);
-      recognitionRef.current = null;
-    }
-  }, []);
+    shouldListenRef.current = true;
+    setListening(true);
+    startRecognition(Ctor);
+  }, [startRecognition]);
 
   // cleanup
   useEffect(() => {
     return () => {
+      shouldListenRef.current = false;
       try {
         recognitionRef.current?.abort();
       } catch {

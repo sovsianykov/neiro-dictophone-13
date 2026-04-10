@@ -75,3 +75,30 @@ export async function PATCH(
 
   return NextResponse.json(updated);
 }
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const existing = await prisma.transcription.findFirst({
+    where: { id, userId: session.user.id },
+    select: { id: true, bookId: true },
+  });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  await prisma.transcription.delete({ where: { id } });
+
+  // Delete the book if it has no more transcriptions
+  const remaining = await prisma.transcription.count({ where: { bookId: existing.bookId } });
+  if (remaining === 0) {
+    await prisma.book.delete({ where: { id: existing.bookId } });
+  }
+
+  return new NextResponse(null, { status: 204 });
+}
